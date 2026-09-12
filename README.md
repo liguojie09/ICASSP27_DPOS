@@ -1,5 +1,7 @@
 # DPOS: Dual Polarity-Orbit Stem
 
+[Repository](https://github.com/liguojie09/ICASSP27_DPOS)
+
 Minimal PyTorch implementation accompanying **DPOS: A Dual-Response Stem for
 Polarity-Invariant Grayscale Medical Image Classification**.
 
@@ -15,7 +17,7 @@ probabilities use the illustrated PneumoniaMNIST example described there.
 ## Files
 
 ```text
-DPOS_method_code/
+ICASSP27_DPOS/
 ├── dpos.py             # DPOS stem and optional convolution conversion
 ├── requirements.txt    # PyTorch dependency
 ├── README.md
@@ -35,7 +37,7 @@ pip install -r requirements.txt
 ```
 
 Copy `dpos.py` into your project or import it from this directory.
-The implementation was checked with Python 3.13.3 and PyTorch 2.8.0 on CPU,
+The implementation was checked with Python 3.13.3 and PyTorch 2.8.0 on a central processing unit (CPU),
 including bfloat16 automatic mixed precision.
 
 ## Usage
@@ -58,7 +60,7 @@ normalization, activation, and subsequent layers after this stem.
 ```python
 from dpos import DPOSStem
 
-# model is an existing ResNet-18; its conv1 may have grayscale or RGB inputs.
+# model is an existing ResNet-18; its conv1 may have grayscale or red-green-blue (RGB) inputs.
 model.conv1 = DPOSStem.from_conv2d(model.conv1)
 ```
 
@@ -82,68 +84,84 @@ The function does not download or load weights.
 
 ## Method
 
-For native pixels $q \in \{0,\ldots,255\}^{H\times W}$, define
+For an image of height H and width W, native 8-bit pixels are centered as
 
-$$
-r=2q-255,\qquad u=r/255.
-$$
+```math
+q\in\{0,\ldots,255\}^{H\times W},\qquad r=2q-255,\qquad u=r/255.
+```
 
 The global sign uses the centered sum, with the first pixel in raster order as
 the deterministic tie-breaker:
 
-$$
+```math
+s=\sum_i r_i,\qquad
 \sigma(q)=
 \begin{cases}
-\operatorname{sign}(\sum_i r_i), & \sum_i r_i\ne0,\\
-\operatorname{sign}(r_1), & \sum_i r_i=0.
+\mathrm{sign}(s), & s\ne 0,\\
+\mathrm{sign}(r_1), & s=0.
 \end{cases}
-\qquad c(q)=\sigma(q)u(q).
-$$
+```
 
-Every centered native 8-bit pixel is nonzero. Both sign statistics reverse under
-complement, so $c(255-q)=c(q)$. The stem computes
+The canonical representative is
 
-$$
-h(q)=\operatorname{Concat}\bigl(W_s*c(q),\ |W_e*u(q)|\bigr),
+```math
+c(q)=\sigma(q)u(q),\qquad c(255-q)=c(q).
+```
+
+Every centered native 8-bit pixel is nonzero. The centered sum and the tie-breaker
+both reverse sign under complement, which gives the identity above. The stem
+then concatenates signed canonical responses and full-wave magnitudes:
+
+```math
+h(q)=\mathrm{Concat}\left(W_s\ast c(q),\;\left|W_e\ast u(q)\right|\right),
 \qquad C_s=3C/4,\quad C_e=C/4.
-$$
+```
 
-Both banks use bias-free convolutions. They contain the same total convolution
-weights and convolution multiply-accumulate count as a one-channel stem with
-the same output width and geometry. Centering, sign selection, and absolute
-value add elementwise work. The native-integer identity is exact in arithmetic;
-identical predictions additionally require deterministic downstream evaluation.
-At the manuscript's 224 x 224 resolution, the centered integer reduction is
-exactly representable in float32.
+Here, the star denotes convolution. Both filter banks are bias-free. Their total
+convolution weight count and multiply-accumulate count equal those of a
+one-channel convolution with the same output width and geometry. Centering,
+sign selection, and absolute value add elementwise work.
 
-The code implements the 3:1 allocation used by DPOS24: 24/8 filters for the
-compact model and 48/16 for ResNet-18. It exposes no baseline implementations.
+The integer-complement identity holds in exact arithmetic. Equal predictions
+also require deterministic downstream evaluation. At the paper's 224 x 224
+resolution, the centered integer sum is exactly representable in float32.
+
+The code implements the 3:1 allocation used by DPOS24: 24 signed and 8 magnitude
+filters for the compact model, or 48 and 16 for ResNet-18.
 
 ## Results from the manuscript
 
-The following values are transcribed from the manuscript. They describe the
-paper's trained models and measurements, rather than a new benchmark of this
-code package. Higher balanced accuracy (BAcc) is better.
+These are the paper's trained-model results and timing measurements. They are
+not new experiments with this method-only package.
 
-### Compact-model comparison — Table 1
+### Compact-model comparison
 
-Values are mean ± sample standard deviation across three independent training
-runs for PneumoniaMNIST and OrganAMNIST, and five for BreastMNIST. ERM denotes
-empirical risk minimization. Each column retains the clean/inverted distinction.
+The table below is an excerpt of the expanded 13-method comparison in Table 1.
+It includes empirical risk minimization (ERM), ERM with two-view test-time
+augmentation (TTA), and DPOS24. The paper also reports ten published-method
+adaptations under the same compact-model protocol.
 
-| Dataset | Method | Clean BAcc ↑ | Inverted BAcc ↑ |
+Area under the receiver operating characteristic curve (AUROC) and balanced
+accuracy (BAcc) are both higher-is-better. Worst-polarity performance is the
+minimum of the clean and complemented scores **within each run**, followed by
+aggregation. Values are mean ± sample standard deviation (SD), with three
+independent training runs for PneumoniaMNIST and OrganAMNIST and five for
+BreastMNIST. TTA reuses each trained ERM model. Bold marks the highest mean among
+all 13 methods in the paper for that dataset and metric.
+
+| Dataset | Method | Worst-polarity AUROC ↑ | Worst-polarity BAcc ↑ |
 | --- | --- | ---: | ---: |
-| PneumoniaMNIST | ERM | 0.8175 ± 0.0330 | 0.7625 ± 0.0607 |
-| PneumoniaMNIST | DPOS24 | **0.8761 ± 0.0458** | **0.8761 ± 0.0458** |
-| OrganAMNIST | ERM | **0.7764 ± 0.0037** | 0.3373 ± 0.0215 |
-| OrganAMNIST | DPOS24 | 0.7593 ± 0.0071 | **0.7593 ± 0.0071** |
-| BreastMNIST | ERM | **0.8011 ± 0.0324** | 0.5129 ± 0.0314 |
-| BreastMNIST | DPOS24 | 0.7974 ± 0.0345 | **0.7974 ± 0.0345** |
+| PneumoniaMNIST | ERM | 0.9052 ± 0.0120 | 0.7625 ± 0.0607 |
+| PneumoniaMNIST | ERM+TTA | 0.9491 ± 0.0026 | 0.8033 ± 0.0530 |
+| PneumoniaMNIST | DPOS24 | **0.9553 ± 0.0142** | **0.8761 ± 0.0458** |
+| OrganAMNIST | ERM | 0.7762 ± 0.0215 | 0.3373 ± 0.0215 |
+| OrganAMNIST | ERM+TTA | 0.9670 ± 0.0033 | 0.6930 ± 0.0132 |
+| OrganAMNIST | DPOS24 | **0.9808 ± 0.0022** | **0.7593 ± 0.0071** |
+| BreastMNIST | ERM | 0.7361 ± 0.0438 | 0.5129 ± 0.0314 |
+| BreastMNIST | ERM+TTA | 0.8780 ± 0.0220 | 0.5525 ± 0.0868 |
+| BreastMNIST | DPOS24 | **0.8829 ± 0.0094** | **0.7974 ± 0.0345** |
 
-Bold indicates the higher mean between the two methods shown for each dataset
-and column. The manuscript also reports two-view test-time augmentation (TTA).
-
-### ResNet-18 forward latency — Table 5
+### ResNet-18 forward latency
 
 Batch size 32, float32, NVIDIA A800; lower is better. After 10 warm-ups, the paper
 reports the median of five groups of 20 synchronized timed evaluations.
@@ -151,15 +169,26 @@ reports the median of five groups of 20 synchronized timed evaluations.
 | Method | Backbone passes | PneumoniaMNIST (ms) ↓ | OrganAMNIST (ms) ↓ | BreastMNIST (ms) ↓ |
 | --- | ---: | ---: | ---: | ---: |
 | ERM | 1 | **6.985** | **7.087** | **7.001** |
-| ERM + TTA | 2 | 14.000 | 14.186 | 14.047 |
+| ERM+TTA | 2 | 14.000 | 14.186 | 14.047 |
 | DPOS24 | 1 | 7.540 | 7.662 | 7.598 |
 
-DPOS24 uses approximately 54% of the measured two-view forward latency. Table 6
-reports zero measured clean/complement prediction discrepancy for DPOS24 on all
-three ResNet-18 test sets.
+DPOS24 uses approximately 54% of the measured two-view forward latency.
 
-## Code availability in the paper
+### Clean/complement prediction consistency
 
-After uploading this directory to your repository, its public URL can be added
-to the abstract with the sentence: “The method implementation is available at
-[repository URL].” Replace the placeholder with the actual repository URL.
+The discrepancy is the maximum absolute probability difference over all
+official test cases and classes for each ResNet-18 model (n = 1). Lower is better.
+"Best of 10 SOTA adapters" reports the smallest discrepancy among the ten
+published state-of-the-art (SOTA) adaptations separately for each dataset.
+
+| Method | PneumoniaMNIST ↓ | OrganAMNIST ↓ | BreastMNIST ↓ |
+| --- | ---: | ---: | ---: |
+| ERM | 0.9698 | 1.0000 | 0.9998 |
+| Best of 10 SOTA adapters | 0.9326 (SoftAug) | 0.9987 (PixMix) | 0.9807 (PRIME) |
+| ERM+TTA | **0.0000** | **0.0000** | **0.0000** |
+| DPOS24 | **0.0000** | **0.0000** | **0.0000** |
+
+ERM+TTA has zero discrepancy because it averages the same two probability
+vectors in either input order. DPOS24 reaches zero through its invariant stem,
+using one backbone evaluation. The paper's supplementary table contains the
+complete per-adapter discrepancies.
