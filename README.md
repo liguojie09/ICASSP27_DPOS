@@ -1,14 +1,6 @@
 # DPOS: Dual Polarity-Orbit Stem
 
 [Repository](https://github.com/liguojie09/ICASSP27_DPOS)
-
-Minimal PyTorch implementation accompanying **DPOS: A Dual-Response Stem for
-Polarity-Invariant Grayscale Medical Image Classification**.
-
-DPOS maps a grayscale image and its global intensity complement to the same stem
-representation. It divides the original filter budget between signed canonical
-responses and local full-wave magnitudes, followed by one backbone evaluation.
-
 ![DPOS method overview](assets/method.png)
 
 The figure is reproduced from the manuscript. Its image, feature maps, and
